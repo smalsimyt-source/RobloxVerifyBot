@@ -53,11 +53,11 @@ client.on("interactionCreate", async interaction => {
         try {
             await interaction.deferReply({ ephemeral: true });
 
-            const searchRes = await fetch("https://users.roblox.com/v1/usernames/users", {
+            // Używamy roproxy.com zamiast roblox.com, aby ominąć blokadę IP Rendera przez Cloudflare
+            const searchRes = await fetch("https://users.roproxy.com/v1/usernames/users", {
                 method: "POST",
                 headers: { 
-                    "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0"
+                    "Content-Type": "application/json"
                 },
                 body: JSON.stringify({ usernames: [robloxUser], excludeBannedUsers: true })
             });
@@ -114,9 +114,7 @@ client.on("interactionCreate", async interaction => {
 
         try {
             console.log(`Pobieranie profilu dla ID: ${data.robloxId}`);
-            const profileRes = await fetch(`https://users.roblox.com/v1/users/${data.robloxId}`, {
-                headers: { "User-Agent": "Mozilla/5.0" }
-            });
+            const profileRes = await fetch(`https://users.roproxy.com/v1/users/${data.robloxId}`);
             
             if (!profileRes.ok) {
                 throw new Error(`HTTP error! status: ${profileRes.status}`);
