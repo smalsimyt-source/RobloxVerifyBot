@@ -22,63 +22,46 @@ const nazwaRoli = "・Members";
 const ID_KANALU_LOGOW = "1531657727397462046";
 const pendingVerifications = new Map();
 
-// Funkcja pobierająca ID oraz Bio bezpośrednio przez zapytanie profilowe Roblox (odporne na blokady IP)
-function getRobloxProfile(username) {
+// Funkcja zapytania z nagłówkami przeglądarkowymi omijającymi blokadę Roblox
+function robloxFetch(url, options = {}, postData = null) {
     return new Promise((resolve, reject) => {
-        // Najpierw pobieramy ID użytkownika przez oficjalne API wyszukiwarki nazw
-        const dataStr = JSON.stringify({ usernames: [username], excludeBannedUsers: true });
-        
-        const reqOpts = {
-            hostname: 'users.roblox.com',
-            path: '/v1/usernames/users',
-            method: 'POST',
+        const urlObj = new URL(url);
+        const reqOptions = {
+            hostname: urlObj.hostname,
+            path: urlObj.pathname + urlObj.search,
+            method: options.method || "GET",
             headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": "https://www.roblox.com/",
+                ...(options.headers || {})
             }
         };
 
-        const req = https.request(reqOpts, (res) => {
-            let body = "";
-            res.on("data", chunk => body += chunk);
+        if (postData) {
+            const bodyStr = JSON.stringify(postData);
+            reqOptions.headers["Content-Type"] = "application/json";
+            reqOptions.headers["Content-Length"] = Buffer.byteLength(bodyStr);
+        }
+
+        const req = https.request(reqOptions, (res) => {
+            let data = "";
+            res.on("data", chunk => data += chunk);
             res.on("end", () => {
                 try {
-                    const json = JSON.parse(body);
-                    if (!json.data || json.data.length === 0) {
-                        return resolve(null);
-                    }
-                    const userId = json.data[0].id;
-                    const correctedName = json.data[0].name;
-
-                    // Pobieramy szczegóły profilu (opis / bio)
-                    https.get(`https://users.roblox.com/v1/users/${userId}`, {
-                        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-                    }, (profileRes) => {
-                        let profileBody = "";
-                        profileRes.on("data", chunk => profileBody += chunk);
-                        profileRes.on("end", () => {
-                            try {
-                                const profileJson = JSON.parse(profileBody);
-                                resolve({
-                                    id: userId,
-                                    name: correctedName,
-                                    description: profileJson.description || ""
-                                });
-                            } catch (e) {
-                                reject(e);
-                            }
-                        });
-                    }).on("error", err => reject(err));
-
+                    resolve({ status: res.statusCode, data: JSON.parse(data) });
                 } catch (e) {
-                    // Awaryjna metoda przez endpoint HTML jeśli API JSON zawiedzie
-                    reject(e);
+                    resolve({ status: res.statusCode, data: data });
                 }
             });
         });
 
         req.on("error", err => reject(err));
-        req.write(dataStr);
+
+        if (postData) {
+            req.write(JSON.stringify(postData));
+        }
         req.end();
     });
 }
@@ -115,19 +98,24 @@ client.on("interactionCreate", async interaction => {
         try {
             await interaction.deferReply({ ephemeral: true });
 
-            const profile = await getRobloxProfile(robloxUser);
+            const searchRes = await robloxFetch(
+                "https://users.roblox.com/v1/usernames/users",
+                { method: "POST" },
+                { usernames: [robloxUser], excludeBannedUsers: true }
+            );
 
-            if (!profile) {
+            if (searchRes.status !== 200 || !searchRes.data.data || searchRes.data.data.length === 0) {
                 return interaction.editReply({
                     content: `❌ Nie znaleziono gracza o nazwie **${robloxUser}** na platformie Roblox. Sprawdź poprawność wpisanej nazwy.`
                 });
             }
 
+            const robloxId = searchRes.data.data[0].id;
             const verifiedCode = `RBX-${Math.floor(1000 + Math.random() * 9000)}`;
 
             pendingVerifications.set(discordId, {
-                robloxUsername: profile.name,
-                robloxId: profile.id,
+                robloxUsername: robloxUser,
+                robloxId: robloxId,
                 code: verifiedCode
             });
 
@@ -141,18 +129,14 @@ client.on("interactionCreate", async interaction => {
             const embed = new EmbedBuilder()
                 .setTitle("Weryfikacja konta Roblox")
                 .setColor(0x00AE86)
-                .setDescription(`Kroki do ukończenia weryfikacji dla **${profile.name}**:\n\n1. Wejdź na swój profil na Roblox.\n2. Zmień swój **Opis (Bio)** na poniższy kod:\n\`\`\`${verifiedCode}\`\`\`\n3. Gdy już to zrobisz, kliknij przycisk **Sprawdź weryfikację** poniżej.`)
+                .setDescription(`Kroki do ukończenia weryfikacji dla **${robloxUser}**:\n\n1. Wejdź na swój profil na Roblox.\n2. Zmień swój **Opis (Bio)** na poniższy kod:\n\`\`\`${verifiedCode}\`\`\`\n3. Gdy już to zrobisz, kliknij przycisk **Sprawdź weryfikację** poniżej.`)
                 .setFooter({ text: "Kod można usunąć z profilu po zakończeniu weryfikacji." });
 
             await interaction.editReply({ embeds: [embed], components: [row] });
 
         } catch (error) {
-            console.error("Błąd pobierania Roblox:", error);
-            if (interaction.deferred) {
-                await interaction.editReply({ content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox. Spróbuj ponownie później.` });
-            } else {
-                await interaction.reply({ content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox. Spróbuj ponownie później.`, ephemeral: true });
-            }
+            console.error("Błąd wyszukiwania Roblox:", error);
+            await interaction.editReply({ content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox. Spróbuj ponownie później.` });
         }
     }
 
@@ -171,13 +155,15 @@ client.on("interactionCreate", async interaction => {
 
         try {
             console.log(`Sprawdzanie profilu Roblox ID: ${data.robloxId}`);
-            const profile = await getRobloxProfile(data.robloxUsername);
-
-            if (!profile) {
-                return interaction.editReply({ content: `❌ Nie udało się pobrać danych profilu Roblox. Spróbuj ponownie.` });
+            const profileRes = await robloxFetch(`https://users.roblox.com/v1/users/${data.robloxId}`, {
+                method: "GET"
+            });
+            
+            if (profileRes.status !== 200) {
+                throw new Error(`API Roblox odpowiedziało kodem: ${profileRes.status}`);
             }
 
-            const bio = profile.description || "";
+            const bio = profileRes.data.description || "";
 
             if (bio.includes(data.code)) {
                 const member = interaction.member;
