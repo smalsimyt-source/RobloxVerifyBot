@@ -114,7 +114,13 @@ client.on("interactionCreate", async interaction => {
         await interaction.deferReply({ ephemeral: true });
 
         try {
+            console.log(`Sprawdzanie profilu Roblox ID: ${data.robloxId}`);
             const profileRes = await fetch(`https://users.roblox.com/v1/users/${data.robloxId}`);
+            
+            if (!profileRes.ok) {
+                throw new Error(`API Roblox odpowiedziało kodem: ${profileRes.status}`);
+            }
+
             const profileData = await profileRes.json();
             const bio = profileData.description || "";
 
@@ -150,8 +156,8 @@ client.on("interactionCreate", async interaction => {
             }
 
         } catch (error) {
-            console.error(error);
-            await interaction.editReply({ content: `❌ Wystąpił błąd podczas sprawdzania profilu Roblox. Spróbuj ponownie.` });
+            console.error("Szczegóły błędu weryfikacji:", error);
+            await interaction.editReply({ content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox. Spróbuj ponownie za chwilę.` });
         }
     }
 });
