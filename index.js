@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require("discord.js");
 const http = require("http");
+const https = require("https");
 
 const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
@@ -19,8 +20,31 @@ const client = new Client({
 
 const nazwaRoli = "・Members";
 const ID_KANALU_LOGOW = "1531657727397462046";
-
 const pendingVerifications = new Map();
+
+// Funkcja pomocnicza do zapytań HTTP/HTTPS z Node.js
+function makeRequest(url, options = {}, postData = null) {
+    return new Promise((resolve, reject) => {
+        const req = https.request(url, options, (res) => {
+            let data = "";
+            res.on("data", (chunk) => data += chunk);
+            res.on("end", () => {
+                try {
+                    resolve({ status: res.statusCode, data: JSON.parse(data) });
+                } catch (e) {
+                    resolve({ status: res.statusCode, data: data });
+                }
+            });
+        });
+
+        req.on("error", (error) => reject(error));
+
+        if (postData) {
+            req.write(JSON.stringify(postData));
+        }
+        req.end();
+    });
+}
 
 const commands = [
     new SlashCommandBuilder()
@@ -53,21 +77,23 @@ client.on("interactionCreate", async interaction => {
         const discordId = interaction.user.id;
 
         try {
-            const userSearchRes = await fetch("https://users.roblox.com/v1/usernames/users", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ usernames: [robloxUser], excludeBannedUsers: true })
-            });
-            const userData = await userSearchRes.json();
+            const userSearchRes = await makeRequest(
+                "https://users.roblox.com/v1/usernames/users",
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" }
+                },
+                { usernames: [robloxUser], excludeBannedUsers: true }
+            );
 
-            if (!userData.data || userData.data.length === 0) {
+            if (userSearchRes.status !== 200 || !userSearchRes.data.data || userSearchRes.data.data.length === 0) {
                 return interaction.reply({
                     content: `❌ Nie znaleziono gracza o nazwie **${robloxUser}** na platformie Roblox. Sprawdź poprawność wpisanej nazwy.`,
                     ephemeral: true
                 });
             }
 
-            const robloxId = userData.data[0].id;
+            const robloxId = userSearchRes.data.data[0].id;
             const verifiedCode = `RBX-${Math.floor(1000 + Math.random() * 9000)}`;
 
             pendingVerifications.set(discordId, {
@@ -92,7 +118,7 @@ client.on("interactionCreate", async interaction => {
             await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
 
         } catch (error) {
-            console.error(error);
+            console.error("Błąd wyszukiwania Roblox:", error);
             await interaction.reply({
                 content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox. Spróbuj ponownie później.`,
                 ephemeral: true
@@ -115,14 +141,15 @@ client.on("interactionCreate", async interaction => {
 
         try {
             console.log(`Sprawdzanie profilu Roblox ID: ${data.robloxId}`);
-            const profileRes = await fetch(`https://users.roblox.com/v1/users/${data.robloxId}`);
+            const profileRes = await makeRequest(`https://users.roblox.com/v1/users/${data.robloxId}`, {
+                method: "GET"
+            });
             
-            if (!profileRes.ok) {
+            if (profileRes.status !== 200) {
                 throw new Error(`API Roblox odpowiedziało kodem: ${profileRes.status}`);
             }
 
-            const profileData = await profileRes.json();
-            const bio = profileData.description || "";
+            const bio = profileRes.data.description || "";
 
             if (bio.includes(data.code)) {
                 const member = interaction.member;
