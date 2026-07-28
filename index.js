@@ -1,6 +1,5 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require("discord.js");
 const http = require("http");
-const https = require("https");
 
 const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
@@ -21,50 +20,6 @@ const client = new Client({
 const nazwaRoli = "・Members";
 const ID_KANALU_LOGOW = "1531657727397462046";
 const pendingVerifications = new Map();
-
-// Funkcja zapytania z nagłówkami przeglądarkowymi omijającymi blokadę Roblox
-function robloxFetch(url, options = {}, postData = null) {
-    return new Promise((resolve, reject) => {
-        const urlObj = new URL(url);
-        const reqOptions = {
-            hostname: urlObj.hostname,
-            path: urlObj.pathname + urlObj.search,
-            method: options.method || "GET",
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json, text/plain, */*",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": "https://www.roblox.com/",
-                ...(options.headers || {})
-            }
-        };
-
-        if (postData) {
-            const bodyStr = JSON.stringify(postData);
-            reqOptions.headers["Content-Type"] = "application/json";
-            reqOptions.headers["Content-Length"] = Buffer.byteLength(bodyStr);
-        }
-
-        const req = https.request(reqOptions, (res) => {
-            let data = "";
-            res.on("data", chunk => data += chunk);
-            res.on("end", () => {
-                try {
-                    resolve({ status: res.statusCode, data: JSON.parse(data) });
-                } catch (e) {
-                    resolve({ status: res.statusCode, data: data });
-                }
-            });
-        });
-
-        req.on("error", err => reject(err));
-
-        if (postData) {
-            req.write(JSON.stringify(postData));
-        }
-        req.end();
-    });
-}
 
 const commands = [
     new SlashCommandBuilder()
@@ -98,19 +53,23 @@ client.on("interactionCreate", async interaction => {
         try {
             await interaction.deferReply({ ephemeral: true });
 
-            const searchRes = await robloxFetch(
-                "https://users.roblox.com/v1/usernames/users",
-                { method: "POST" },
-                { usernames: [robloxUser], excludeBannedUsers: true }
-            );
+            const searchRes = await fetch("https://users.roblox.com/v1/usernames/users", {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0"
+                },
+                body: JSON.stringify({ usernames: [robloxUser], excludeBannedUsers: true })
+            });
+            const searchData = await searchRes.json();
 
-            if (searchRes.status !== 200 || !searchRes.data.data || searchRes.data.data.length === 0) {
+            if (!searchData.data || searchData.data.length === 0) {
                 return interaction.editReply({
                     content: `❌ Nie znaleziono gracza o nazwie **${robloxUser}** na platformie Roblox. Sprawdź poprawność wpisanej nazwy.`
                 });
             }
 
-            const robloxId = searchRes.data.data[0].id;
+            const robloxId = searchData.data[0].id;
             const verifiedCode = `RBX-${Math.floor(1000 + Math.random() * 9000)}`;
 
             pendingVerifications.set(discordId, {
@@ -135,8 +94,8 @@ client.on("interactionCreate", async interaction => {
             await interaction.editReply({ embeds: [embed], components: [row] });
 
         } catch (error) {
-            console.error("Błąd wyszukiwania Roblox:", error);
-            await interaction.editReply({ content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox. Spróbuj ponownie później.` });
+            console.error("Błąd wyszukiwania:", error);
+            await interaction.editReply({ content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox.` });
         }
     }
 
@@ -154,16 +113,17 @@ client.on("interactionCreate", async interaction => {
         await interaction.deferReply({ ephemeral: true });
 
         try {
-            console.log(`Sprawdzanie profilu Roblox ID: ${data.robloxId}`);
-            const profileRes = await robloxFetch(`https://users.roblox.com/v1/users/${data.robloxId}`, {
-                method: "GET"
+            console.log(`Pobieranie profilu dla ID: ${data.robloxId}`);
+            const profileRes = await fetch(`https://users.roblox.com/v1/users/${data.robloxId}`, {
+                headers: { "User-Agent": "Mozilla/5.0" }
             });
             
-            if (profileRes.status !== 200) {
-                throw new Error(`API Roblox odpowiedziało kodem: ${profileRes.status}`);
+            if (!profileRes.ok) {
+                throw new Error(`HTTP error! status: ${profileRes.status}`);
             }
 
-            const bio = profileRes.data.description || "";
+            const profileData = await profileRes.json();
+            const bio = profileData.description || "";
 
             if (bio.includes(data.code)) {
                 const member = interaction.member;
