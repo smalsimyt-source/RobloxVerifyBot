@@ -23,7 +23,7 @@ const ID_KANALU_LOGOW = "1531657727397462046";
 // Tymczasowa pamięć na kody weryfikacyjne
 const pendingVerifications = new Map();
 
-// Definicja komendy panelu (dla administratora, aby wysłał panel na kanał)
+// Definicja komendy panelu
 const commands = [
     new SlashCommandBuilder()
         .setName("panel-weryfikacji")
@@ -48,6 +48,8 @@ client.once("ready", async () => {
 client.on("interactionCreate", async interaction => {
     // 1. Komenda /panel-weryfikacji wysyłająca embed z przyciskiem
     if (interaction.isChatInputCommand() && interaction.commandName === "panel-weryfikacji") {
+        await interaction.deferReply({ ephemeral: true });
+
         const embed = new EmbedBuilder()
             .setTitle("Weryfikacja Konta Roblox")
             .setDescription("Kliknij przycisk poniżej, aby rozpocząć proces weryfikacji i otrzymać rangę **" + nazwaRoli + "**.")
@@ -61,7 +63,7 @@ client.on("interactionCreate", async interaction => {
         );
 
         await interaction.channel.send({ embeds: [embed], components: [row] });
-        await interaction.reply({ content: "✅ Pomyślnie wysłano panel weryfikacyjny!", ephemeral: true });
+        await interaction.editReply({ content: "✅ Pomyślnie wysłano panel weryfikacyjny!" });
     }
 
     // 2. Kliknięcie przycisku "Zweryfikuj konto" -> wyskakuje okienko (Modal) na nick z Roblox
