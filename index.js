@@ -1,7 +1,6 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require("discord.js");
 const http = require("http");
 
-// Prosty serwer HTTP wymagany przez Render, aby uniknąć błędu "No open ports detected"
 const server = http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": "text/plain" });
     res.end("Bot dziala poprawnie!\n");
@@ -18,12 +17,9 @@ const client = new Client({
     ]
 });
 
-// --- KONFIGURACJA ---
-const nazwaRoli = "・Members"; // Nazwa roli nadawanej po weryfikacji
-const ID_KANALU_LOGOW = "1531657727397462046"; // ID kanału na logi
-// --------------------
+const nazwaRoli = "・Members";
+const ID_KANALU_LOGOW = "1531657727397462046";
 
-// Przechowalnia weryfikacji w pamięci: { discordUserId: { robloxUsername, robloxId, code } }
 const pendingVerifications = new Map();
 
 const commands = [
@@ -52,12 +48,10 @@ client.once("clientReady", async () => {
 });
 
 client.on("interactionCreate", async interaction => {
-    // 1. Obsługa komendy /weryfikacja
     if (interaction.isChatInputCommand() && interaction.commandName === "weryfikacja") {
         const robloxUser = interaction.options.getString("nazwa");
         const discordId = interaction.user.id;
 
-        // Pobieramy ID użytkownika z Roblox za pomocą oficjalnego API Roblox
         try {
             const userSearchRes = await fetch("https://users.roblox.com/v1/usernames/users", {
                 method: "POST",
@@ -76,14 +70,12 @@ client.on("interactionCreate", async interaction => {
             const robloxId = userData.data[0].id;
             const verifiedCode = `RBX-${Math.floor(1000 + Math.random() * 9000)}`;
 
-            // Zapisujemy dane do pamięci bota
             pendingVerifications.set(discordId, {
                 robloxUsername: robloxUser,
                 robloxId: robloxId,
                 code: verifiedCode
             });
 
-            // Tworzymy przycisk do sprawdzenia
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId("check_verification")
@@ -108,7 +100,6 @@ client.on("interactionCreate", async interaction => {
         }
     }
 
-    // 2. Obsługa kliknięcia przycisku "Sprawdź weryfikację"
     if (interaction.isButton() && interaction.customId === "check_verification") {
         const discordId = interaction.user.id;
         const data = pendingVerifications.get(discordId);
@@ -123,15 +114,11 @@ client.on("interactionCreate", async interaction => {
         await interaction.deferReply({ ephemeral: true });
 
         try {
-            // Pobieramy opis profilu gracza z Roblox API
             const profileRes = await fetch(`https://users.roblox.com/v1/users/${data.robloxId}`);
             const profileData = await profileRes.json();
-
             const bio = profileData.description || "";
 
-            // Sprawdzamy, czy wygenerowany kod znajduje się w opisie profilu
             if (bio.includes(data.code)) {
-                // Sukces! Nadajemy rolę
                 const member = interaction.member;
                 const role = interaction.guild.roles.cache.find(r => r.name === nazwaRoli);
 
@@ -144,7 +131,6 @@ client.on("interactionCreate", async interaction => {
 
                 await interaction.editReply({ content: `✅ **Weryfikacja powiodła się!** Konto zostało pomyślnie powiązane z graczem **${data.robloxUsername}**. Przyznano rolę!` });
 
-                // Wysyłamy log na wyznaczony kanał Discord
                 const logChannel = interaction.guild.channels.cache.get(ID_KANALU_LOGOW);
                 if (logChannel) {
                     const logEmbed = new EmbedBuilder()
@@ -160,7 +146,6 @@ client.on("interactionCreate", async interaction => {
                 }
 
             } else {
-                // Kod nie został znaleziony w bio
                 await interaction.editReply({ content: `❌ Nie znaleziono kodu **${data.code}** w opisie (Bio) Twojego profilu Roblox. Upewnij się, że został wklejony i zapisany, a następnie spróbuj ponownie.` });
             }
 
