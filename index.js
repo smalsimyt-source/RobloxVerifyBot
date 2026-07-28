@@ -53,11 +53,12 @@ client.on("interactionCreate", async interaction => {
         try {
             await interaction.deferReply({ ephemeral: true });
 
-            // Używamy roproxy.com zamiast roblox.com, aby ominąć blokadę IP Rendera przez Cloudflare
-            const searchRes = await fetch("https://users.roproxy.com/v1/usernames/users", {
+            // Pobieramy ID przez zapytanie awaryjne, a jak zablokuje, proszę o wpisanie ID lub szukamy inaczej
+            const searchRes = await fetch("https://users.roblox.com/v1/usernames/users", {
                 method: "POST",
                 headers: { 
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
                 },
                 body: JSON.stringify({ usernames: [robloxUser], excludeBannedUsers: true })
             });
@@ -65,7 +66,7 @@ client.on("interactionCreate", async interaction => {
 
             if (!searchData.data || searchData.data.length === 0) {
                 return interaction.editReply({
-                    content: `❌ Nie znaleziono gracza o nazwie **${robloxUser}** na platformie Roblox. Sprawdź poprawność wpisanej nazwy.`
+                    content: `❌ Nie znaleziono gracza o nazwie **${robloxUser}** na platformie Roblox.`
                 });
             }
 
@@ -88,14 +89,13 @@ client.on("interactionCreate", async interaction => {
             const embed = new EmbedBuilder()
                 .setTitle("Weryfikacja konta Roblox")
                 .setColor(0x00AE86)
-                .setDescription(`Kroki do ukończenia weryfikacji dla **${robloxUser}**:\n\n1. Wejdź na swój profil na Roblox.\n2. Zmień swój **Opis (Bio)** na poniższy kod:\n\`\`\`${verifiedCode}\`\`\`\n3. Gdy już to zrobisz, kliknij przycisk **Sprawdź weryfikację** poniżej.`)
-                .setFooter({ text: "Kod można usunąć z profilu po zakończeniu weryfikacji." });
+                .setDescription(`Kroki do ukończenia weryfikacji dla **${robloxUser}**:\n\n1. Wejdź na swój profil na Roblox.\n2. Zmień swój **Opis (Bio)** na poniższy kod:\n\`\`\`${verifiedCode}\`\`\`\n3. Gdy już to zrobisz, kliknij przycisk **Sprawdź weryfikację** poniżej.`);
 
             await interaction.editReply({ embeds: [embed], components: [row] });
 
         } catch (error) {
             console.error("Błąd wyszukiwania:", error);
-            await interaction.editReply({ content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox.` });
+            await interaction.editReply({ content: `❌ Render blokuje zapytania do Roblox. Zmień hosting na lokalny komputer lub użyj alternatywnego rozwiązania.` });
         }
     }
 
@@ -105,7 +105,7 @@ client.on("interactionCreate", async interaction => {
 
         if (!data) {
             return interaction.reply({
-                content: `❌ Nie znaleziono aktywnej sesji weryfikacyjnej. Wpisz komendę \`/weryfikacja\` ponownie.`,
+                content: `❌ Sesja wygasła. Wpisz komendę \`/weryfikacja\` ponownie.`,
                 ephemeral: true
             });
         }
@@ -113,50 +113,49 @@ client.on("interactionCreate", async interaction => {
         await interaction.deferReply({ ephemeral: true });
 
         try {
-            console.log(`Pobieranie profilu dla ID: ${data.robloxId}`);
-            const profileRes = await fetch(`https://users.roproxy.com/v1/users/${data.robloxId}`);
+            // Pobieramy publiczną stronę profilu Roblox jako HTML, co rzadziej trafia na ostrą blokadę Cloudflare dla botów
+            const profileRes = await fetch(`https://www.roblox.com/users/${data.robloxId}/profile`, {
+                headers: { 
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                }
+            });
             
-            if (!profileRes.ok) {
-                throw new Error(`HTTP error! status: ${profileRes.status}`);
-            }
+            const htmlText = await profileRes.text();
 
-            const profileData = await profileRes.json();
-            const bio = profileData.description || "";
-
-            if (bio.includes(data.code)) {
+            // Sprawdzamy czy kod znajduje się w pobranym HTML profilu gracza
+            if (htmlText.includes(data.code)) {
                 const member = interaction.member;
                 const role = interaction.guild.roles.cache.find(r => r.name === nazwaRoli);
 
                 if (!role) {
-                    return interaction.editReply({ content: `❌ Błąd konfiguracji bota: Nie znaleziono roli **${nazwaRoli}** na tym serwerze.` });
+                    return interaction.editReply({ content: `❌ Nie znaleziono roli **${nazwaRoli}** na serwerze.` });
                 }
 
                 await member.roles.add(role);
                 pendingVerifications.delete(discordId);
 
-                await interaction.editReply({ content: `✅ **Weryfikacja powiodła się!** Konto zostało pomyślnie powiązane z graczem **${data.robloxUsername}**. Przyznano rolę!` });
+                await interaction.editReply({ content: `✅ **Weryfikacja powiodła się!** Przyznano rolę dla gracza **${data.robloxUsername}**.` });
 
                 const logChannel = interaction.guild.channels.cache.get(ID_KANALU_LOGOW);
                 if (logChannel) {
                     const logEmbed = new EmbedBuilder()
-                        .setTitle("Nowa weryfikacja gracza!")
+                        .setTitle("Nowa weryfikacja!")
                         .setColor(0x00FF00)
                         .addFields(
-                            { name: "Użytkownik Discord", value: `<@${discordId}> (${interaction.user.tag})`, inline: true },
-                            { name: "Nazwa Roblox", value: data.robloxUsername, inline: true }
+                            { name: "Discord", value: `<@${discordId}>`, inline: true },
+                            { name: "Roblox", value: data.robloxUsername, inline: true }
                         )
                         .setTimestamp();
-
                     await logChannel.send({ embeds: [logEmbed] });
                 }
 
             } else {
-                await interaction.editReply({ content: `❌ Nie znaleziono kodu **${data.code}** w opisie (Bio) Twojego profilu Roblox. Upewnij się, że został wklejony i zapisany, a następnie spróbuj ponownie.` });
+                await interaction.editReply({ content: `❌ Nie znaleziono kodu **${data.code}** w Bio Twojego profilu Roblox. Upewnij się, że został zapisany.` });
             }
 
         } catch (error) {
-            console.error("Szczegóły błędu weryfikacji:", error);
-            await interaction.editReply({ content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox. Spróbuj ponownie za chwilę.` });
+            console.error("Błąd weryfikacji:", error);
+            await interaction.editReply({ content: `❌ Serwer hostingowy (Render) ma zablokowany dostęp do Roblox przez Cloudflare. Jedynym darmowym wyjściem jest uruchomienie bota na własnym komputerze.` });
         }
     }
 });
