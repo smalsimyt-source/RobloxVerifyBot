@@ -1,4 +1,15 @@
 const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require("discord.js");
+const http = require("http");
+
+// Prosty serwer HTTP wymagany przez Render, aby uniknąć błędu "No open ports detected"
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("Bot dziala poprawnie!\n");
+});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Serwer HTTP nasłuchuje na porcie ${PORT}`);
+});
 
 const client = new Client({
     intents: [
@@ -9,10 +20,10 @@ const client = new Client({
 
 // --- KONFIGURACJA ---
 const nazwaRoli = "・Members"; // Nazwa roli nadawanej po weryfikacji
-const ID_KANALU_LOGOW = "1531657727397462046"; // Wklej ID kanału tekstowego na Discordzie, gdzie mają przychodzić logi
+const ID_KANALU_LOGOW = "1531657727397462046"; // ID kanału na logi
 // --------------------
 
-// Przechowalnia weryfikacji w pamięci: { discordUserId: { robloxUsername, code } }
+// Przechowalnia weryfikacji w pamięci: { discordUserId: { robloxUsername, robloxId, code } }
 const pendingVerifications = new Map();
 
 const commands = [
@@ -25,7 +36,7 @@ const commands = [
                   .setRequired(true))
 ].map(command => command.toJSON());
 
-client.once("ready", async () => {
+client.once("clientReady", async () => {
     console.log(`Bot działa jako ${client.user.tag}`);
 
     const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
@@ -57,7 +68,7 @@ client.on("interactionCreate", async interaction => {
 
             if (!userData.data || userData.data.length === 0) {
                 return interaction.reply({
-                    content: `❌ Nie znaleziono gracza o nazwie **${robloxUser}}}** na platformie Roblox. Sprawdź poprawność wpisanej nazwy.`,
+                    content: `❌ Nie znaleziono gracza o nazwie **${robloxUser}** na platformie Roblox. Sprawdź poprawność wpisanej nazwy.`,
                     ephemeral: true
                 });
             }
@@ -104,7 +115,7 @@ client.on("interactionCreate", async interaction => {
 
         if (!data) {
             return interaction.reply({
-                content: `❌ Nie znaleakiono aktywnej sesji weryfikacyjnej. Wpisz komendę \`/weryfikacja\` ponownie.`,
+                content: `❌ Nie znaleziono aktywnej sesji weryfikacyjnej. Wpisz komendę \`/weryfikacja\` ponownie.`,
                 ephemeral: true
             });
         }
