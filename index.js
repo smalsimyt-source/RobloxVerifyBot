@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
+const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require("discord.js");
 const http = require("http");
 
 const server = http.createServer((req, res) => {
@@ -20,14 +20,16 @@ const client = new Client({
 const nazwaRoli = "・Members";
 const ID_KANALU_LOGOW = "1531657727397462046";
 
-// Tymczasowa pamięć na kody weryfikacyjne
 const pendingVerifications = new Map();
 
-// Definicja komendy panelu
 const commands = [
     new SlashCommandBuilder()
-        .setName("panel-weryfikacji")
-        .setDescription("Wysyła publiczny panel weryfikacyjny na ten kanał")
+        .setName("weryfikacja")
+        .setDescription("Rozpocznij proces weryfikacji konta Roblox")
+        .addStringOption(option => 
+            option.setName("nazwa")
+                  .setDescription("Twoja dokładna nazwa użytkownika w Roblox")
+                  .setRequired(true))
 ].map(command => command.toJSON());
 
 client.once("ready", async () => {
@@ -46,46 +48,8 @@ client.once("ready", async () => {
 });
 
 client.on("interactionCreate", async interaction => {
-    // 1. Komenda /panel-weryfikacji wysyłająca embed z przyciskiem
-    if (interaction.isChatInputCommand() && interaction.commandName === "panel-weryfikacji") {
-        await interaction.deferReply({ ephemeral: true });
-
-        const embed = new EmbedBuilder()
-            .setTitle("Weryfikacja Konta Roblox")
-            .setDescription("Kliknij przycisk poniżej, aby rozpocząć proces weryfikacji i otrzymać rangę **" + nazwaRoli + "**.")
-            .setColor(0x00AE86);
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId("start_verification_modal")
-                .setLabel("Zweryfikuj konto")
-                .setStyle(ButtonStyle.Primary)
-        );
-
-        await interaction.channel.send({ embeds: [embed], components: [row] });
-        await interaction.editReply({ content: "✅ Pomyślnie wysłano panel weryfikacyjny!" });
-    }
-
-    // 2. Kliknięcie przycisku "Zweryfikuj konto" -> wyskakuje okienko (Modal) na nick z Roblox
-    if (interaction.isButton() && interaction.customId === "start_verification_modal") {
-        const modal = new ModalBuilder()
-            .setCustomId("roblox_modal")
-            .setTitle("Weryfikacja Roblox");
-
-        const robloxInput = new TextInputBuilder()
-            .setCustomId("roblox_username_input")
-            .setLabel("Twój dokładny nick z Roblox")
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder("Wpisz tutaj swoją nazwę...")
-            .setRequired(true);
-
-        modal.addComponents(new ActionRowBuilder().addComponents(robloxInput));
-        await interaction.showModal(modal);
-    }
-
-    // 3. Obsługa wpisanego nicku z okienka (Modala)
-    if (interaction.isModalSubmit() && interaction.customId === "roblox_modal") {
-        const robloxUser = interaction.fields.getTextInputValue("roblox_username_input");
+    if (interaction.isChatInputCommand() && interaction.commandName === "weryfikacja") {
+        const robloxUser = interaction.options.getString("nazwa");
         const discordId = interaction.user.id;
 
         try {
@@ -98,7 +62,7 @@ client.on("interactionCreate", async interaction => {
 
             if (!userData.data || userData.data.length === 0) {
                 return interaction.reply({
-                    content: `❌ Nie znaleziono gracza o nazwie **${robloxUser}** na platformie Roblox. Spróbuj ponownie.`,
+                    content: `❌ Nie znaleziono gracza o nazwie **${robloxUser}** na platformie Roblox. Sprawdź poprawność wpisanej nazwy.`,
                     ephemeral: true
                 });
             }
@@ -120,30 +84,29 @@ client.on("interactionCreate", async interaction => {
             );
 
             const embed = new EmbedBuilder()
-                .setTitle("Krok 2: Przypisz kod do profilu")
+                .setTitle("Weryfikacja konta Roblox")
                 .setColor(0x00AE86)
-                .setDescription(`Weryfikacja dla gracza **${robloxUser}**:\n\n1. Skopiuj poniższy kod:\n\`\`\`${verifiedCode}\`\`\`\n2. Wejdź na swój profil na Roblox i wklej go w **Opis (Bio)**.\n3. Wróć tutaj i kliknij **Sprawdź weryfikację**.`)
-                .setFooter({ text: "Kod możesz usunąć z profilu po pomyślnej weryfikacji." });
+                .setDescription(`Kroki do ukończenia weryfikacji dla **${robloxUser}**:\n\n1. Wejdź na swój profil na Roblox.\n2. Zmień swój **Opis (Bio)** na poniższy kod:\n\`\`\`${verifiedCode}\`\`\`\n3. Gdy już to zrobisz, kliknij przycisk **Sprawdź weryfikację** poniżej.`)
+                .setFooter({ text: "Kod można usunąć z profilu po zakończeniu weryfikacji." });
 
             await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
 
         } catch (error) {
             console.error(error);
             await interaction.reply({
-                content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox.`,
+                content: `❌ Wystąpił błąd podczas kontaktowania się z API Roblox. Spróbuj ponownie później.`,
                 ephemeral: true
             });
         }
     }
 
-    // 4. Kliknięcie "Sprawdź weryfikację" i przyznanie roli
     if (interaction.isButton() && interaction.customId === "check_verification") {
         const discordId = interaction.user.id;
         const data = pendingVerifications.get(discordId);
 
         if (!data) {
             return interaction.reply({
-                content: `❌ Sesja wygasła lub nie została rozpoczęta. Kliknij przycisk weryfikacji ponownie.`,
+                content: `❌ Nie znaleziono aktywnej sesji weryfikacyjnej. Wpisz komendę \`/weryfikacja\` ponownie.`,
                 ephemeral: true
             });
         }
@@ -160,13 +123,13 @@ client.on("interactionCreate", async interaction => {
                 const role = interaction.guild.roles.cache.find(r => r.name === nazwaRoli);
 
                 if (!role) {
-                    return interaction.editReply({ content: `❌ Błąd: Nie znaleziono roli **${nazwaRoli}** na serwerze.` });
+                    return interaction.editReply({ content: `❌ Błąd konfiguracji bota: Nie znaleziono roli **${nazwaRoli}** na tym serwerze.` });
                 }
 
                 await member.roles.add(role);
                 pendingVerifications.delete(discordId);
 
-                await interaction.editReply({ content: `✅ **Weryfikacja powiodła się!** Konto połączone z **${data.robloxUsername}**. Otrzymałeś rolę!` });
+                await interaction.editReply({ content: `✅ **Weryfikacja powiodła się!** Konto zostało pomyślnie powiązane z graczem **${data.robloxUsername}**. Przyznano rolę!` });
 
                 const logChannel = interaction.guild.channels.cache.get(ID_KANALU_LOGOW);
                 if (logChannel) {
@@ -183,12 +146,12 @@ client.on("interactionCreate", async interaction => {
                 }
 
             } else {
-                await interaction.editReply({ content: `❌ Nie znaleziono kodu **${data.code}** w opisie Twojego profilu Roblox. Upewnij się, że został zapisany!` });
+                await interaction.editReply({ content: `❌ Nie znaleziono kodu **${data.code}** w opisie (Bio) Twojego profilu Roblox. Upewnij się, że został wklejony i zapisany, a następnie spróbuj ponownie.` });
             }
 
         } catch (error) {
             console.error(error);
-            await interaction.editReply({ content: `❌ Wystąpił błąd podczas sprawdzania profilu. Spróbuj ponownie.` });
+            await interaction.editReply({ content: `❌ Wystąpił błąd podczas sprawdzania profilu Roblox. Spróbuj ponownie.` });
         }
     }
 });
